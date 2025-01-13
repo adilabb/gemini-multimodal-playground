@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, StopCircle, Video, Monitor } from 'lucide-react';
+import { Mic, StopCircle, Video } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -11,14 +11,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { base64ToFloat32Array, float32ToPcm16 } from '@/lib/utils';
 
+
 interface Config {
   systemPrompt: string;
   voice: string;
   googleSearch: boolean;
   allowInterruptions: boolean;
 }
-
-type ChatMode = 'audio' | 'video' | 'screen' | null;
 
 export default function GeminiVoiceChat() {
   const [isStreaming, setIsStreaming] = useState(false);
@@ -36,21 +35,17 @@ export default function GeminiVoiceChat() {
   const audioInputRef = useRef(null);
   const clientId = useRef(crypto.randomUUID);
   const [videoEnabled, setVideoEnabled] = useState(false);
-  const [screenEnabled, setScreenEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const screenRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoStreamRef = useRef<MediaStream | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
   const videoIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const screenIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [chatMode, setChatMode] = useState<ChatMode>(null);
+  const [chatMode, setChatMode] = useState<'audio' | 'video' | null>(null);
 
   const voices = ["Puck", "Charon", "Kore", "Fenrir", "Aoede"];
-  let audioBuffer = [];
-  let isPlaying = false;
+  let audioBuffer = []
+  let isPlaying = false
 
-  const startStream = async (mode: ChatMode) => {
+  const startStream = async (mode: 'audio' | 'video') => {
     setChatMode(mode);
     wsRef.current = new WebSocket(`ws://localhost:8000/ws/${clientId.current}`);
     
@@ -63,8 +58,6 @@ export default function GeminiVoiceChat() {
       await startAudioStream();
       if (mode === 'video') {
         setVideoEnabled(true);
-      } else if (mode === 'screen') {
-        setScreenEnabled(true);
       }
       setIsStreaming(true);
       setIsConnected(true);
@@ -90,26 +83,31 @@ export default function GeminiVoiceChat() {
     };
   };
 
+  // Initialize audio context and stream
   const startAudioStream = async () => {
     try {
+      // Initialize audio context
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000
+        sampleRate: 16000 // Required by Gemini
       });
 
+      // Get microphone stream
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
+      // Create audio input node
       const source = audioContextRef.current.createMediaStreamSource(stream);
       const processor = audioContextRef.current.createScriptProcessor(512, 1, 1);
       
       processor.onaudioprocess = (e) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          const inputData = e.inputBuffer.getChannelData(0);
-          const pcmData = float32ToPcm16(inputData);
-          const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
-          wsRef.current.send(JSON.stringify({
-            type: 'audio',
-            data: base64Data
-          }));
+            const inputData = e.inputBuffer.getChannelData(0);
+            const pcmData = float32ToPcm16(inputData);
+            // Convert to base64 and send as binary
+            const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+            wsRef.current.send(JSON.stringify({
+              type: 'audio',
+              data: base64Data
+            }));
         }
       };
 
@@ -123,6 +121,7 @@ export default function GeminiVoiceChat() {
     }
   };
 
+  // Stop streaming
   const stopStream = () => {
     if (audioInputRef.current) {
       const { source, processor, stream } = audioInputRef.current;
@@ -132,31 +131,19 @@ export default function GeminiVoiceChat() {
       audioInputRef.current = null;
     }
 
-    if (chatMode === 'video' || chatMode === 'screen') {
+    if (chatMode === 'video') {
       setVideoEnabled(false);
-      setScreenEnabled(false);
-      
       if (videoStreamRef.current) {
         videoStreamRef.current.getTracks().forEach(track => track.stop());
         videoStreamRef.current = null;
       }
-      
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(track => track.stop());
-        screenStreamRef.current = null;
-      }
-      
       if (videoIntervalRef.current) {
         clearInterval(videoIntervalRef.current);
         videoIntervalRef.current = null;
       }
-      
-      if (screenIntervalRef.current) {
-        clearInterval(screenIntervalRef.current);
-        screenIntervalRef.current = null;
-      }
     }
 
+    // stop ongoing audio playback
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
@@ -173,20 +160,20 @@ export default function GeminiVoiceChat() {
   };
 
   const playAudioData = async (audioData) => {
-    audioBuffer.push(audioData);
+    audioBuffer.push(audioData)
     if (!isPlaying) {
-      playNextInQueue();
+      playNextInQueue(); // Start playback if not already playing
+      }
     }
-  };
 
   const playNextInQueue = async () => {
-    if (!audioContextRef.current || audioBuffer.length === 0) {
+    if (!audioContextRef.current || audioBuffer.length == 0) {
       isPlaying = false;
       return;
     }
 
-    isPlaying = true;
-    const audioData = audioBuffer.shift();
+    isPlaying = true
+    const audioData = audioBuffer.shift()
 
     const buffer = audioContextRef.current.createBuffer(1, audioData.length, 24000);
     buffer.copyToChannel(audioData, 0);
@@ -195,8 +182,8 @@ export default function GeminiVoiceChat() {
     source.buffer = buffer;
     source.connect(audioContextRef.current.destination);
     source.onended = () => {
-      playNextInQueue();
-    };
+      playNextInQueue()
+    }
     source.start();
   };
 
@@ -214,8 +201,9 @@ export default function GeminiVoiceChat() {
           videoRef.current.srcObject = stream;
           videoStreamRef.current = stream;
           
+          // Start frame capture after video is playing
           videoIntervalRef.current = setInterval(() => {
-            captureAndSendFrame('video');
+            captureAndSendFrame();
           }, 1000);
 
         } catch (err) {
@@ -227,6 +215,7 @@ export default function GeminiVoiceChat() {
 
       startVideo();
 
+      // Cleanup function
       return () => {
         if (videoStreamRef.current) {
           videoStreamRef.current.getTracks().forEach(track => track.stop());
@@ -240,75 +229,34 @@ export default function GeminiVoiceChat() {
     }
   }, [videoEnabled]);
 
-  useEffect(() => {
-    if (screenEnabled && screenRef.current) {
-      const startScreenShare = async () => {
-        try {
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            }
-          });
-          
-          screenRef.current.srcObject = stream;
-          screenStreamRef.current = stream;
-          
-          // Handle stream stop (user clicks "Stop sharing")
-          stream.getVideoTracks()[0].onended = () => {
-            stopStream();
-          };
-          
-          screenIntervalRef.current = setInterval(() => {
-            captureAndSendFrame('screen');
-          }, 1000);
-
-        } catch (err) {
-          console.error('Screen sharing error:', err);
-          setError('Failed to start screen sharing: ' + err.message);
-          setScreenEnabled(false);
-        }
-      };
-
-      startScreenShare();
-
-      return () => {
-        if (screenStreamRef.current) {
-          screenStreamRef.current.getTracks().forEach(track => track.stop());
-          screenStreamRef.current = null;
-        }
-        if (screenIntervalRef.current) {
-          clearInterval(screenIntervalRef.current);
-          screenIntervalRef.current = null;
-        }
-      };
-    }
-  }, [screenEnabled]);
-
-  const captureAndSendFrame = (source: 'video' | 'screen') => {
-    if (!canvasRef.current || !wsRef.current) return;
-    
-    const videoElement = source === 'video' ? videoRef.current : screenRef.current;
-    if (!videoElement) return;
+  // Frame capture function
+  const captureAndSendFrame = () => {
+    if (!canvasRef.current || !videoRef.current || !wsRef.current) return;
     
     const context = canvasRef.current.getContext('2d');
     if (!context) return;
     
-    canvasRef.current.width = videoElement.videoWidth;
-    canvasRef.current.height = videoElement.videoHeight;
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
     
-    context.drawImage(videoElement, 0, 0);
+    context.drawImage(videoRef.current, 0, 0);
     const base64Image = canvasRef.current.toDataURL('image/jpeg').split(',')[1];
     
     wsRef.current.send(JSON.stringify({
       type: 'image',
-      source: source,
       data: base64Image
     }));
   };
 
+  // Toggle video function
+  const toggleVideo = () => {
+    setVideoEnabled(!videoEnabled);
+  };
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
+      stopVideo();
       stopStream();
     };
   }, []);
@@ -374,32 +322,23 @@ export default function GeminiVoiceChat() {
         <div className="flex gap-4">
           {!isStreaming && (
             <>
-              <Button
-                onClick={() => startStream('audio')}
-                disabled={isStreaming}
-                className="gap-2"
-              >
-                <Mic className="h-4 w-4" />
-                Start Audio Chat
-              </Button>
+            <Button
+              onClick={() => startStream('audio')}
+              disabled={isStreaming}
+              className="gap-2"
+          >
+            <Mic className="h-4 w-4" />
+            Start Chatting
+          </Button>
 
-              <Button
-                onClick={() => startStream('video')}
-                disabled={isStreaming}
-                className="gap-2"
-              >
-                <Video className="h-4 w-4" />
-                Start Video Chat
-              </Button>
-
-              <Button
-                onClick={() => startStream('screen')}
-                disabled={isStreaming}
-                className="gap-2"
-              >
-                <Monitor className="h-4 w-4" />
-                Start Screen Share
-              </Button>
+          <Button
+            onClick={() => startStream('video')}
+            disabled={isStreaming}
+            className="gap-2"
+          >
+            <Video className="h-4 w-4" />
+              Start Chatting with Video
+            </Button>
             </>
           )}
 
@@ -426,37 +365,24 @@ export default function GeminiVoiceChat() {
           </Card>
         )}
 
-        {(chatMode === 'video' || chatMode === 'screen') && (
+        {chatMode === 'video' && (
           <Card>
             <CardContent className="pt-6 space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">
-                  {chatMode === 'video' ? 'Video Input' : 'Screen Share'}
-                </h2>
+                <h2 className="text-lg font-semibold">Video Input</h2>
               </div>
               
               <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                {chatMode === 'video' && (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    width={320}
-                    height={240}
-                    className="w-full h-full object-contain"
-                    style={{ transform: 'scaleX(-1)' }}
-                  />
-                )}
-                {chatMode === 'screen' && (
-                  <video
-                    ref={screenRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-contain"
-                  />
-                )}
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  width={320}
+                  height={240}
+                  className="w-full h-full object-contain"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
                 <canvas
                   ref={canvasRef}
                   className="hidden"
